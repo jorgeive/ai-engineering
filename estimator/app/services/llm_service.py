@@ -1,5 +1,6 @@
 import time
 from dataclasses import dataclass
+from typing import Generator
 
 import structlog
 
@@ -243,7 +244,55 @@ def generate_estimation(
     result["latency_ms"] = int((time.perf_counter() - t0) * 1000)
 
     return result
+# ----
+# Streaming entrypoint
+# ----
 
+def generate_estimation_stream(
+        transcription: str,
+        opts: GenerationOptions | None = None,
+) -> Generator[str, None, None]:
+    """Generate a software estimation from a meeting transcription using the configured LLM."""
+    opts = opts or GenerationOptions()
+    settings = get_settings()
+
+    system_prompt = build_system_prompt(
+        example_format=opts.example_format,
+        num_examples=opts.num_examples,
+        use_examples=opts.use_examples,
+        inline_cleaning=(opts.preprocessing == "inline_cleaning"),
+    )
+
+    model = opts.model or settings.LLM_MODEL
+
+    log.info(
+        "generating_estimation",
+        provider=settings.LLM_PROVIDER,
+        model=model,
+        preprocessing=opts.preprocessing,
+        example_format=opts.example_format,
+        num_examples=opts.num_examples,
+        use_examples=opts.use_examples,
+        max_tokens=opts.max_tokens,
+        thinking_budget=opts.thinking_budget,
+    )
+
+    try:
+        if opts.thinking_budget is not None:
+            log.warning("thinking_budget_ignored_for_provider", provider="openai")
+        yield from _call_openai_stream(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": transcription},
+            ],
+            model=model,
+            max_tokens=opts.max_tokens,
+        )
+    except LLMServiceError:
+        raise
+    except Exception as exc:
+        log.error("llm_call_failed", error=str(exc), provider=settings.LLM_PROVIDER)
+        raise LLMServiceError(f"LLM call failed: {exc}") from exc
 
 # ---------------------------------------------------------------------------
 # Provider wrappers
@@ -287,6 +336,23 @@ def _call_openai(messages: list[dict], model: str, max_tokens: int) -> dict:
         },
     }
 
+def _call_openai_stream(messages: list[dict], model: str, max_tokens: int) -> Generator[str, None, None]:
+    from openai import OpenAI
+
+    settings = get_settings()
+    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        max_tokens=max_tokens,
+        stream=True,
+    )
+
+    for chunk in response:
+        delta = chunk.choices[0].delta.content
+        if delta is not None:
+            yield delta
 
 def _call_anthropic(
     system: str,

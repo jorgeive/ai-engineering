@@ -1,9 +1,10 @@
 import structlog
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.schemas.estimation import EstimationRequest, EstimationResponse
 from app.services.evaluation import evaluate_estimation_structure
-from app.services.llm_service import GenerationOptions, LLMServiceError, generate_estimation
+from app.services.llm_service import GenerationOptions, LLMServiceError, generate_estimation, generate_estimation_stream
 
 log = structlog.get_logger()
 
@@ -36,3 +37,20 @@ async def create_estimation(request: EstimationRequest) -> EstimationResponse:
     )
 
     return EstimationResponse(**result, validation=validation)
+
+@router.post("/estimate/stream")
+async def estimate_stream(request: EstimationRequest):
+    opts = GenerationOptions(
+        preprocessing=request.preprocessing,
+        example_format=request.example_format,
+        num_examples=request.num_examples,
+        use_examples=request.use_examples,
+        model=request.model,
+        max_tokens=request.max_tokens,
+        thinking_budget=request.thinking_budget,
+    )
+    try:
+        generator = generate_estimation_stream(request.transcription, opts)
+    except LLMServiceError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return StreamingResponse(generator, media_type="text/plain")
