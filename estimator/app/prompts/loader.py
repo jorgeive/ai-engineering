@@ -12,6 +12,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from app.schemas.estimation import EstimationRequest
+from app.sessions import ProjectMetadata
 
 _BASE_DIR = Path(__file__).resolve().parent
 
@@ -28,6 +29,7 @@ _env = Environment(
 def render_estimation_prompt(
     request: EstimationRequest,
     version: str = "v1",
+    project_metadata: ProjectMetadata | None = None,
 ) -> tuple[str, str]:
     """Render the system and user prompts for the estimation use case.
 
@@ -40,7 +42,16 @@ def render_estimation_prompt(
         "project_type": request.project_type.value,
         "detail_level": request.detail_level.value,
         "output_format": request.output_format.value,
+        "project_metadata": _metadata_context(project_metadata),
     }
     system = _env.get_template(f"estimation/{version}/system.j2").render(**context)
     user = _env.get_template(f"estimation/{version}/user.j2").render(**context)
     return system, user
+
+
+def _metadata_context(metadata: ProjectMetadata | None) -> dict | None:
+    if metadata is None:
+        return None
+    values = metadata.model_dump(mode="json")
+    has_values = any(value not in (None, "", []) for value in values.values())
+    return values if has_values else None

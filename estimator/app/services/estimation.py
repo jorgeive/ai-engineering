@@ -33,13 +33,20 @@ from app.guardrails.input import check_input
 from app.guardrails.output import enforce_scope_response
 from app.prompts import render_estimation_prompt
 from app.schemas.estimation import EstimationRequest, EstimationResponse, EstimationResult
+from app.sessions import ProjectMetadata
 from app.services.cache import EstimationCache
 from app.services.llm_wrapper import LLMWrapper
 
 log = structlog.get_logger()
 
 
-def _exact_cache_key(request: EstimationRequest, prompt_version: str, model: str) -> str:
+def _exact_cache_key(
+    request: EstimationRequest,
+    prompt_version: str,
+    model: str,
+    project_metadata: ProjectMetadata | None = None,
+    conversation_messages: list[dict[str, str]] | None = None,
+) -> str:
     """Deterministic SHA-256 key over the typed request + prompt_version + model."""
     payload = json.dumps(
         {
@@ -49,6 +56,10 @@ def _exact_cache_key(request: EstimationRequest, prompt_version: str, model: str
             "output_format": request.output_format.value,
             "prompt_version": prompt_version,
             "model": model,
+            "project_metadata": (
+                project_metadata.model_dump(mode="json") if project_metadata is not None else None
+            ),
+            "conversation_messages": conversation_messages,
         },
         sort_keys=True,
     )
@@ -74,13 +85,22 @@ class EstimationService:
         self.openai_client = openai_client
         self.prompt_version = prompt_version
 
-    def estimate(self, request: EstimationRequest) -> EstimationResponse:
+    def estimate(
+        self,
+        request: EstimationRequest,
+        project_metadata: ProjectMetadata | None = None,
+        conversation_messages: list[dict[str, str]] | None = None,
+    ) -> EstimationResponse:
         # 1. Input guardrails — raises InputGuardrailViolation on rejection.
         check_input(request.description, openai_client=self.openai_client)
 
         # 2. Exact-match cache lookup.
         cache_key = _exact_cache_key(
-            request, self.prompt_version, self.llm_wrapper.primary_model
+            request,
+            self.prompt_version,
+            self.llm_wrapper.primary_model,
+            project_metadata,
+            conversation_messages,
         )
         cached = self.exact_cache.get(cache_key)
         if cached:
@@ -91,7 +111,8 @@ class EstimationService:
             )
 
         # 3. Semantic cache lookup.
-        if self.semantic_cache is not None:
+        has_metadata = _has_metadata(project_metadata)
+        if self.semantic_cache is not None and not has_metadata:
             semantic_hit = self.semantic_cache.lookup(request, self.prompt_version)
             if semantic_hit is not None:
                 log.info("estimation_cache_hit", kind="semantic")
@@ -103,13 +124,14 @@ class EstimationService:
 
         # 4. Render the versioned prompt.
         system_prompt, user_message = render_estimation_prompt(
-            request, version=self.prompt_version
+            request, version=self.prompt_version, project_metadata=project_metadata
         )
 
         # 5. LLM call with Instructor + Pydantic validators (re-prompts on failure).
         result, meta = self.llm_wrapper.complete_structured(
             system_prompt=system_prompt,
             user_message=user_message,
+            messages=conversation_messages,
             response_model=EstimationResult,
         )
         log.info(
@@ -132,10 +154,53 @@ class EstimationService:
                 "prompt_version": self.prompt_version,
             },
         )
-        if self.semantic_cache is not None:
+        if self.semantic_cache is not None and not has_metadata:
             self.semantic_cache.store(request, result, self.prompt_version)
 
         # 8. Return.
         return EstimationResponse(
             result=result, prompt_version=self.prompt_version, cached=False
         )
+
+    def estimate_conversational(
+        self,
+        request: EstimationRequest,
+        *,
+        project_metadata: ProjectMetadata | None = None,
+        conversation_messages: list[dict[str, str]] | None = None,
+    ) -> EstimationResponse:
+        """Estimate one session turn without consulting or mutating caches.
+
+        A conversational turn is scoped by its session history and metadata;
+        therefore an identical transcript in another session is not the same
+        request.  The original :meth:`estimate` method remains the cached,
+        stateless path used by ``/api/v1/estimate``.
+        """
+        check_input(request.description, openai_client=self.openai_client)
+        system_prompt, user_message = render_estimation_prompt(
+            request, version=self.prompt_version, project_metadata=project_metadata
+        )
+        result, meta = self.llm_wrapper.complete_structured(
+            system_prompt=system_prompt,
+            user_message=user_message,
+            messages=conversation_messages,
+            response_model=EstimationResult,
+        )
+        result = enforce_scope_response(result)
+        log.info(
+            "conversational_estimation_generated",
+            confidence_pct=result.confidence_pct,
+            total_cost_eur=result.total_cost_eur,
+            phases=len(result.phases),
+            **meta,
+        )
+        return EstimationResponse(
+            result=result, prompt_version=self.prompt_version, cached=False
+        )
+
+
+def _has_metadata(metadata: ProjectMetadata | None) -> bool:
+    if metadata is None:
+        return False
+    values = metadata.model_dump(exclude_none=True)
+    return any(value not in ("", []) for value in values.values())

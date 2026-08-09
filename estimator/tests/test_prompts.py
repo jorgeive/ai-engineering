@@ -18,6 +18,7 @@ from app.schemas.estimation import (
     OutputFormat,
     ProjectType,
 )
+from app.sessions import ProjectMetadata
 
 
 def _make_request(**overrides) -> EstimationRequest:
@@ -69,6 +70,29 @@ def test_examples_block_is_included_in_system_prompt() -> None:
     system, _ = render_estimation_prompt(request)
     assert "<examples>" in system
     assert "</examples>" in system
+
+
+def test_project_metadata_block_is_empty_without_known_facts() -> None:
+    system, _ = render_estimation_prompt(_make_request())
+
+    assert "<project_metadata>\n</project_metadata>" in system
+
+
+def test_project_metadata_block_contains_known_facts() -> None:
+    system, _ = render_estimation_prompt(
+        _make_request(),
+        project_metadata=ProjectMetadata(
+            project_name="Invoice Hub",
+            assumed_team_size=4,
+            mentioned_technologies=["Python", "PostgreSQL"],
+            agreed_scope="invoice approval workflow",
+        ),
+    )
+
+    assert "project_name: Invoice Hub" in system
+    assert "assumed_team_size: 4" in system
+    assert "mentioned_technologies: Python, PostgreSQL" in system
+    assert "agreed_scope: invoice approval workflow" in system
 
 
 def test_strict_undefined_raises_on_missing_variable() -> None:

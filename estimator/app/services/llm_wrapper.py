@@ -186,6 +186,7 @@ class LLMWrapper:
         *,
         system_prompt: str,
         user_message: str,
+        messages: list[dict[str, str]] | None = None,
         response_model: type[T],
         model_override: str | None = None,
         max_tokens: int = 4000,
@@ -201,7 +202,7 @@ class LLMWrapper:
         atomically by Instructor before this function returns.
         """
         target_model = model_override or self.primary_model
-        messages = [
+        messages = messages or [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ]
