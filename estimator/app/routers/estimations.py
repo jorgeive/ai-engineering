@@ -6,12 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from app.dependencies import get_llm_wrapper
+from app.prompts.loader import render_estimation_prompt
 from app.schemas.estimation import (
     EstimationRequest,
     EstimationResponse,
     StreamEstimationRequest,
 )
-from app.services.evaluation import evaluate_estimation_structure
 from app.services.llm_service import (
     GenerationOptions,
     LLMServiceError,
@@ -21,36 +21,29 @@ from app.services.llm_service import (
 from app.services.llm_wrapper import LLMWrapper
 
 log = structlog.get_logger()
+PROMPT_VERSION = "v1"
 
 router = APIRouter(prefix="/api/v1", tags=["estimations"])
 
 
 @router.post("/estimate", response_model=EstimationResponse)
 async def create_estimation(request: EstimationRequest) -> EstimationResponse:
-    """Receive a meeting transcription and return a software project estimation."""
-    opts = GenerationOptions(
-        preprocessing=request.preprocessing,
-        example_format=request.example_format,
-        num_examples=request.num_examples,
-        use_examples=request.use_examples,
-        model=request.model,
-        max_tokens=request.max_tokens,
-        thinking_budget=request.thinking_budget,
-    )
+    """Receive the public estimation contract and return free-form estimate text."""
+    system_prompt, user_prompt = render_estimation_prompt(request)
 
     try:
-        result = generate_estimation(request.transcription, opts)
+        result = generate_estimation(
+            user_prompt,
+            GenerationOptions(
+                system_prompt_override=system_prompt,
+                user_message_override=user_prompt,
+            ),
+        )
     except LLMServiceError as exc:
         log.error("estimation_endpoint_error", error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))
 
-    validation = (
-        evaluate_estimation_structure(result["estimation"], result["finish_reason"])
-        if request.evaluate
-        else None
-    )
-
-    return EstimationResponse(**result, validation=validation)
+    return EstimationResponse(text=result["estimation"], prompt_version=PROMPT_VERSION)
 
 
 @router.post("/estimate/stream")

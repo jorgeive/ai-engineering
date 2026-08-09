@@ -90,6 +90,8 @@ class GenerationOptions:
     model: str | None = None
     max_tokens: int = DEFAULT_MAX_TOKENS
     thinking_budget: int | None = None
+    system_prompt_override: str | None = None
+    user_message_override: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +214,10 @@ def generate_estimation(
         extracted_requirements, prep_usage, prep_cost = extract_requirements(transcription, opts)
         user_input = extracted_requirements
 
-    system_prompt = build_system_prompt(
+    if opts.user_message_override is not None:
+        user_input = opts.user_message_override
+
+    system_prompt = opts.system_prompt_override or build_system_prompt(
         example_format=opts.example_format,
         num_examples=opts.num_examples,
         use_examples=opts.use_examples,
