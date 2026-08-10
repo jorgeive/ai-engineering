@@ -62,6 +62,23 @@ def _provider_from_model(model: str) -> str:
     return "unknown"
 
 
+def _structured_usage_meta(result: BaseModel, model: str) -> dict[str, int | float]:
+    """Extract token usage retained by Instructor on its parsed model.
+
+    Instructor attaches the provider response as ``_raw_response``. Test
+    doubles and providers without usage retain the previous zero-safe shape.
+    """
+    raw_response = getattr(result, "_raw_response", None)
+    usage = getattr(raw_response, "usage", None)
+    tokens_in = int(getattr(usage, "prompt_tokens", 0) or 0)
+    tokens_out = int(getattr(usage, "completion_tokens", 0) or 0)
+    return {
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "cost_usd": _estimate_cost(model, tokens_in, tokens_out),
+    }
+
+
 class LLMWrapper:
     """Unified LLM client with cache, fallback, and cost tracking."""
 
@@ -238,6 +255,7 @@ class LLMWrapper:
             "model": _normalise_model_name(target_model),
             "provider": _provider_from_model(target_model),
             "latency_ms": latency_ms,
+            **_structured_usage_meta(result, target_model),
         }
         log.info(
             "llm_structured_chat_completed",
@@ -309,6 +327,7 @@ class LLMWrapper:
             "model": _normalise_model_name(target_model),
             "provider": _provider_from_model(target_model),
             "latency_ms": latency_ms,
+            **_structured_usage_meta(result, target_model),
         }
         log.info(
             "llm_structured_call_completed",

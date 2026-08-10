@@ -41,7 +41,7 @@ from app.schemas.estimation import (
     ProjectType,
 )
 from app.services.estimation import EstimationService
-from app.sessions.models import ProjectMetadata
+from app.sessions.models import Message, ProjectMetadata
 from app.sessions.store import SessionNotFoundError, SessionStore
 from app.sessions.tier_resolver import Tier
 
@@ -63,6 +63,10 @@ class SessionInfoResponse(BaseModel):
     summary_chars: int = 0
     last_resolved_tier: str | None = None
     last_tier_rule: str | None = None
+    last_turn_observation: dict[str, object] | None = None
+    summary: str | None = None
+    anchors: list[Message] = Field(default_factory=list)
+    recent_messages: list[Message] = Field(default_factory=list)
 
 
 @router.post("", response_model=CreateSessionResponse, status_code=201)
@@ -92,6 +96,10 @@ def get_session(
         summary_chars=len(session.history.summary or ""),
         last_resolved_tier=session.last_resolved_tier,
         last_tier_rule=session.last_tier_rule,
+        last_turn_observation=session.last_turn_observation,
+        summary=session.history.summary,
+        anchors=session.history.anchors,
+        recent_messages=session.history.messages,
     )
 
 
@@ -103,8 +111,9 @@ async def _resolve_session_and_enrich(
 ):
     """Shared prelude for both /estimate and /estimate-acb.
 
-    Returns ``(session, enriched_transcript)``. Raises ``HTTPException`` for
-    session/attachment problems; the caller wraps the LLM call separately.
+    Returns ``(session, enriched_transcript, attachments_total_chars)``.
+    Raises ``HTTPException`` for session/attachment problems; the caller
+    wraps the LLM call separately.
     """
     try:
         session = store.get_or_404(session_id)
@@ -148,7 +157,7 @@ async def _resolve_session_and_enrich(
         enriched_transcript_chars=len(enriched),
         attachment_count=len(extracted),
     )
-    return session, enriched
+    return session, enriched, sum(len(text) for _, text in extracted)
 
 
 def _map_pipeline_errors(exc: Exception) -> HTTPException:
@@ -182,7 +191,7 @@ async def estimate_in_session(
     store: SessionStore = Depends(get_session_store),
     service: EstimationService = Depends(get_estimation_service),
 ) -> EstimationResponse:
-    session, enriched = await _resolve_session_and_enrich(
+    session, enriched, attachments_total_chars = await _resolve_session_and_enrich(
         session_id, transcript, attachments, store
     )
     try:
@@ -193,6 +202,7 @@ async def estimate_in_session(
             detail_level=detail_level,
             output_format=output_format,
             tier=tier,
+            attachments_total_chars=attachments_total_chars,
         )
     except HTTPException:
         raise
@@ -218,7 +228,7 @@ async def estimate_in_session_acb(
     iteration trail (verdict, confidence, issues per round) so callers can
     show the audit trail in their UI.
     """
-    session, enriched = await _resolve_session_and_enrich(
+    session, enriched, _attachments_total_chars = await _resolve_session_and_enrich(
         session_id, transcript, attachments, store
     )
     try:

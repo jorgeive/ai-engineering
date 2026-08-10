@@ -177,6 +177,7 @@ class EstimationService:
         detail_level: DetailLevel,
         output_format: OutputFormat,
         tier: Tier | None = None,
+        attachments_total_chars: int = 0,
     ) -> EstimationResponse:
         """Multi-turn estimation pipeline (Session 5).
 
@@ -251,6 +252,9 @@ class EstimationService:
         #    operation now — compression (anchor promotion + cumulative
         #    summary + sliding window) is the next, explicit step.
         session.history.append(user=user_message, assistant=result.model_dump_json())
+        # Capture this before compression, since the sliding window plateaus
+        # once it reaches its maximum size.
+        turn_index = len(session.history.messages) // 2
         apply_compression(
             session.history,
             llm_wrapper=self.llm_wrapper,
@@ -267,6 +271,26 @@ class EstimationService:
             llm_wrapper=self.llm_wrapper,
             model=self.metadata_extractor_model,
         )
+
+        # One event per turn keeps all telemetry values correlated for a
+        # single-pass CSV export; conversational requests do not use caches.
+        observation = {
+            "turn_index": max(1, turn_index),
+            "session_id": session.session_id,
+            "enriched_transcript_chars": len(transcript),
+            "attachments_total_chars": attachments_total_chars,
+            "messages_in_window": len(session.history.messages),
+            "anchors_count": len(session.history.anchors),
+            "summary_chars": len(session.history.summary or ""),
+            "tokens_in": int(meta.get("tokens_in", 0) or 0),
+            "tokens_out": int(meta.get("tokens_out", 0) or 0),
+            "cost_usd": float(meta.get("cost_usd", 0.0) or 0.0),
+            "latency_ms": int(meta.get("latency_ms", 0) or 0),
+            "cache_hit_kind": "none",
+            "last_resolved_tier": session.last_resolved_tier,
+        }
+        session.last_turn_observation = observation
+        log.info("turn_observed", **observation)
 
         return EstimationResponse(
             result=result,

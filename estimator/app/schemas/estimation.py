@@ -2,17 +2,18 @@
 
 Session 4 contract: typed form-style request maps to a typed, validated
 ``EstimationResult`` (structured output via Instructor + Pydantic). Two model
-validators enforce business rules that the LLM cannot break:
+validators enforce business rules for the structured result:
 
-1. The cost of all phases must sum to ``total_cost_eur``.
+1. The server derives ``total_cost_eur`` from the cost of all phases.
 2. Low-confidence answers (< 30%) must declare it explicitly by starting the
    summary with ``"Out of scope:"``.
 
-When the LLM violates a validator, Instructor re-prompts the model with the
-``ValueError`` message until it agrees (up to ``max_retries`` attempts).
+Malformed phase values still cause Instructor to re-prompt the model; simple
+arithmetic mismatches are normalised before validation.
 """
 
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -66,16 +67,11 @@ class Phase(BaseModel):
 
 
 class EstimationResult(BaseModel):
-    """Structured estimation. The two validators below are the business rules
-    that the LLM cannot break — Instructor will re-prompt the model when one
-    of them raises.
+    """Structured estimation with a server-derived cost total.
 
-    Field order is deliberate: ``phases`` comes BEFORE the totals so the LLM
-    commits to the per-phase numbers first (autoregressive generation) and
-    then only needs to sum them when filling the totals. Putting totals first
-    leads the model to pick a round number and then back-fit phases to it,
-    which it does very badly arithmetically — particularly with smaller
-    models like ``gpt-4o-mini``.
+    The model proposes the phase breakdown, but ``total_cost_eur`` is always
+    recomputed from it before field validation. This turns simple arithmetic
+    errors into normalisation instead of costly Instructor retries.
     """
 
     summary: str = Field(min_length=10, max_length=1200)
@@ -84,8 +80,22 @@ class EstimationResult(BaseModel):
     total_duration_weeks: int = Field(ge=1, le=104)
     total_cost_eur: int = Field(ge=0, le=2_000_000)
 
+    @model_validator(mode="before")
+    @classmethod
+    def derive_total_cost_from_phases(cls, data: Any) -> Any:
+        """Treat the LLM-provided total as display-only and derive the truth."""
+        if not isinstance(data, dict) or not isinstance(data.get("phases"), list):
+            return data
+        try:
+            total_cost_eur = sum(int(phase["cost_eur"]) for phase in data["phases"])
+        except (KeyError, TypeError, ValueError):
+            # Let normal field validation report malformed phase data.
+            return data
+        return {**data, "total_cost_eur": total_cost_eur}
+
     @model_validator(mode="after")
     def phases_sum_matches_total(self) -> "EstimationResult":
+        """Defensive invariant for values built without the before validator."""
         phase_sum = sum(p.cost_eur for p in self.phases)
         if phase_sum != self.total_cost_eur:
             raise ValueError(

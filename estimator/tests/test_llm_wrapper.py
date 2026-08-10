@@ -143,6 +143,11 @@ def test_complete_structured_chat_forwards_messages(wrapper: LLMWrapper) -> None
     ]
 
     expected = _Answer(text="ok")
+    object.__setattr__(
+        expected,
+        "_raw_response",
+        type("Response", (), {"usage": type("Usage", (), {"prompt_tokens": 120, "completion_tokens": 30})()})(),
+    )
     with patch.object(
         wrapper._instructor.chat.completions, "create", return_value=expected
     ) as mocked:
@@ -159,6 +164,9 @@ def test_complete_structured_chat_forwards_messages(wrapper: LLMWrapper) -> None
     assert meta["model"] == "gpt-4o-mini"
     assert meta["provider"] == "openai"
     assert "latency_ms" in meta
+    assert meta["tokens_in"] == 120
+    assert meta["tokens_out"] == 30
+    assert meta["cost_usd"] == 0.000036
 
 
 def test_complete_structured_chat_uses_anthropic_key_for_claude(wrapper: LLMWrapper) -> None:
