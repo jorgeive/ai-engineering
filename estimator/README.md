@@ -51,6 +51,68 @@ Respuesta:
 }
 ```
 
+### Ingerir presupuestos para generar embeddings
+
+Con el servicio levantado, abre `http://localhost:8000/docs`, despliega
+`POST /embeddings/ingest`, pulsa **Try it out** y envía un objeto con los
+presupuestos normalizados bajo la clave `budgets`. El contenido de
+`data/budgets_sample.json` es la lista de muestra que debe ir dentro de esa
+clave:
+
+```json
+{
+  "budgets": [
+    {
+      "budget_id": "BUD-2024-001",
+      "client_metadata": {"name": "FintechCorp", "sector": "finance", "country": "ES"},
+      "project_summary": "Mobile banking API with OAuth 2.0 authentication and PSD2 compliance",
+      "main_technology": "ruby_on_rails",
+      "year": 2024,
+      "total_estimated_hours": 120,
+      "components": [
+        {
+          "component_id": "AUTH-001",
+          "name": "OAuth 2.0 authentication backend",
+          "description": "OAuth 2.0 authorization-code flow with JWT sessions.",
+          "tech_stack": ["ruby_on_rails", "postgresql"],
+          "estimated_hours": 120,
+          "complexity": "high",
+          "dependencies": []
+        }
+      ]
+    }
+  ]
+}
+```
+
+Para una prueba real, sustituye el objeto de ejemplo por los 15 presupuestos
+completos de `data/budgets_sample.json`; el endpoint devuelve los embeddings
+en memoria y sus estadísticas agregadas.
+
+### Comparar similitud entre dos textos
+
+El script usa `text-embedding-3-small` y calcula el coseno con la biblioteca
+estándar. Requiere `OPENAI_API_KEY` en `estimator/.env` o en el entorno.
+
+Dentro del contenedor (el servicio Compose de este repositorio se llama
+`estimator`):
+
+```bash
+cd estimator
+docker compose exec estimator python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+```
+
+Fuera del contenedor:
+
+```bash
+cd estimator
+uv run python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+```
+
 ### Cliente Streamlit
 
 El cliente Streamlit es un formulario que construye el JSON y muestra el `text` recibido. Corre fuera de Docker y consume la API por HTTP:
