@@ -267,22 +267,24 @@ curl -s -X POST http://localhost:8000/embeddings/ingest \
 
 Con el sample: 15 presupuestos → 52 chunks → ~4.1k tokens → coste estimado ~$0.00008.
 
-### Script CLI `compare.py`
+### Script CLI `query_examples.py`
 
-Sanity check de los embeddings: embebe dos textos y devuelve su similitud coseno (calculada a mano, sin numpy). Reutiliza `OpenAIEmbedder`.
+Smoke test del pipeline persistente: ingesta de forma idempotente el corpus de
+ejemplo y ejecuta cinco queries representativas contra `POST /search` (match
+directo, reformulación semántica, dominio distinto, consulta ambigua y consulta
+específica). Imprime el top-5 con `chunk_id`, distancia, tipo y una preview del
+contenido.
 
 ```bash
-# Fuera del contenedor (desde estimator/, con el .env cargado):
-uv run python scripts/compare.py \
-  --text-a "OAuth 2.0 authentication backend for fintech" \
-  --text-b "JWT-based authorization service for banking app"
+# Con el stack levantado, desde estimator/:
+uv run python scripts/query_examples.py
 
-# Dentro del contenedor (scripts/ está bind-montado en docker-compose.yml):
-docker compose exec estimator python scripts/compare.py \
-  --text-a "..." --text-b "..."
+# Dentro del contenedor:
+docker compose run --rm estimator python scripts/query_examples.py
+
+# URL alternativa de la API:
+ESTIMATOR_BASE_URL=http://localhost:8000 uv run python scripts/query_examples.py
 ```
-
-Los resultados de las tres parejas de validación del enunciado están en [`app/generation/rag/SANITY_CHECK.md`](app/generation/rag/SANITY_CHECK.md).
 
 ### Comparativa de estrategias de chunking (sesión en vivo)
 
@@ -321,6 +323,32 @@ Las estrategias `semantic`, `propositional` y `contextual_retrieval` llaman a AP
 - **Late chunking** se trata como concepto en el directo (no hay código ejecutable: requiere modelos con token-level embeddings que no son el del proyecto).
 - **Fuera de scope** → **Sesión 08**: persistencia vectorial (pgvector), búsqueda semántica / retrieval real y métricas formales de retrieval (recall@k, NDCG).
 - El guion del directo está en `guides/session-7-live-guide.md` (git-ignored, material de instructor).
+
+## Sesión 8 — Persistencia vectorial con PostgreSQL
+
+La persistencia del pipeline de embeddings usa PostgreSQL con `pgvector`. Alembic
+gestiona el esquema y la migración `0002_session8_pgvector` crea la extensión
+`vector`, las tablas `documents` y `chunks`, y sus índices relacionales. No se
+crea todavía ningún índice vectorial: el sequential scan es el baseline del
+directo.
+
+```bash
+# Desde la raíz del monorepo; el servicio se llama estimator en este Compose.
+docker compose run --rm estimator alembic upgrade head
+```
+
+### Decisiones de schema
+
+- **Dos tablas.** Un documento produce N chunks. La relación 1:N evita duplicar
+  metadata y `ON DELETE CASCADE` elimina sus chunks automáticamente.
+- **`metadata` como JSONB.** Las propiedades estables usan columnas tipadas;
+  JSONB permite añadir metadata variable y consultarla con el índice GIN sin
+  migrar el schema por cada nueva clave.
+- **`cosine_distance`.** Con embeddings normalizados, L2 e inner product darían
+  rankings equivalentes. Cosine es la convención habitual en RAG y queda
+  alineada con `<=>` y la futura operator class HNSW `vector_cosine_ops`.
+- **Sin índice vectorial todavía.** El sequential scan es el baseline del
+  ejercicio; HNSW/IVFFlat se añadirán y medirán durante la sesión en directo.
 
 ---
 

@@ -30,7 +30,11 @@ from app.generation.cag.exact import EstimationCache
 from app.domain.estimation_service import EstimationService
 from app.foundation.llm.runtime_config import RuntimeModelConfig
 from app.foundation.llm.wrapper import LLMWrapper
+from app.foundation.persistence.database import get_async_session_factory
 from app.generation.conversation.store import SessionStore
+from app.generation.rag.ingest_service import RagIngestService
+from app.generation.rag.retriever import SemanticRetriever
+from app.generation.rag.store.repository import ChunkStore
 
 log = structlog.get_logger()
 
@@ -93,6 +97,31 @@ def get_embedder() -> OpenAIEmbedder | None:
         log.warning("embedder_disabled", reason="no_openai_key")
         return None
     return OpenAIEmbedder(client=client, model=settings.EMBEDDING_MODEL)
+
+
+@lru_cache
+def get_rag_ingest_service() -> RagIngestService | None:
+    embedder = get_embedder()
+    if embedder is None:
+        return None
+    return RagIngestService(
+        chunker=get_chunker(),
+        embedder=embedder,
+        session_factory=get_async_session_factory(),
+        store=ChunkStore(),
+    )
+
+
+@lru_cache
+def get_semantic_retriever() -> SemanticRetriever | None:
+    embedder = get_embedder()
+    if embedder is None:
+        return None
+    return SemanticRetriever(
+        embedder=embedder,
+        session_factory=get_async_session_factory(),
+        store=ChunkStore(),
+    )
 
 
 @lru_cache

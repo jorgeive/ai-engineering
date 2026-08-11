@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from functools import lru_cache
 
 from sqlalchemy import Engine, create_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
@@ -43,3 +44,27 @@ def get_session() -> Iterator[Session]:
         yield session
     finally:
         session.close()
+
+
+def _async_database_url() -> str:
+    """Derive the asyncpg URL while keeping Session 6 on psycopg."""
+    url = get_settings().DATABASE_URL
+    if "+psycopg" in url:
+        return url.replace("+psycopg", "+asyncpg")
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
+@lru_cache
+def create_async_engine_from_settings() -> AsyncEngine:
+    return create_async_engine(_async_database_url(), pool_pre_ping=True)
+
+
+@lru_cache
+def get_async_session_factory() -> async_sessionmaker:
+    return async_sessionmaker(
+        bind=create_async_engine_from_settings(),
+        autoflush=False,
+        expire_on_commit=False,
+    )
