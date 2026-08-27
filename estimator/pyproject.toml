@@ -64,6 +64,8 @@ dev = [
     "ruff>=0.5",
     "fakeredis>=2.20",
     "deepeval>=1.0",
+    "ragas>=0.2",
+    "datasets>=2.19",
 ]
 
 [tool.ruff]

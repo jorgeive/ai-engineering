@@ -1,0 +1,46 @@
+{
+  "metrics": [
+    "faithfulness",
+    "answer_relevancy",
+    "context_precision",
+    "context_recall"
+  ],
+  "table_markdown": "| query | faithfulness | answer_relevancy | context_precision | context_recall |\n|---|---|---|---|---|\n| Q1 | 0.000 | 0.063 | 0.806 | 0.000 |\n| Q2 | 0.000 | 0.037 | 0.000 | 0.000 |\n| Q3 | 0.000 | 0.132 | 1.000 | 0.000 |\n| Q4 | 0.667 | 0.240 | 0.833 | 0.000 |\n| Q5 | 0.000 | 0.000 | 0.833 | 0.000 |\n| **average** | 0.133 | 0.094 | 0.694 | 0.000 |",
+  "per_query": [
+    {
+      "id": "Q1",
+      "faithfulness": 0.0,
+      "answer_relevancy": 0.06282928774300435,
+      "context_precision": 0.8055555555287036,
+      "context_recall": 0.0
+    },
+    {
+      "id": "Q2",
+      "faithfulness": 0.0,
+      "answer_relevancy": 0.036741202249012485,
+      "context_precision": 0.0,
+      "context_recall": 0.0
+    },
+    {
+      "id": "Q3",
+      "faithfulness": 0.0,
+      "answer_relevancy": 0.1321326579502076,
+      "context_precision": 0.9999999999666667,
+      "context_recall": 0.0
+    },
+    {
+      "id": "Q4",
+      "faithfulness": 0.6666666666666666,
+      "answer_relevancy": 0.24034475838791183,
+      "context_precision": 0.8333333332916666,
+      "context_recall": 0.0
+    },
+    {
+      "id": "Q5",
+      "faithfulness": 0.0,
+      "answer_relevancy": 0.0,
+      "context_precision": 0.8333333332916666,
+      "context_recall": 0.0
+    }
+  ]
+}

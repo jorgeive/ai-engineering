@@ -1,0 +1,42 @@
+{
+  "description": "Session 11 generation golden set. Extends the Session 10 Q1-Q5 retrieval queries with expert reference estimates for RAGAS evaluation.",
+  "source": "evals/golden_retrieval.json (Q1-Q5)",
+  "corpus": "data/budgets_sample.json",
+  "queries": [
+    {
+      "id": "Q1",
+      "query": "Mobile banking application with OAuth2 authentication, PSD2 open banking compliance, strong customer authentication and a transaction ledger.",
+      "transcript": "Client kickoff: a neobank needs a mobile banking application with OAuth 2.0 authentication, PSD2 open banking connectors, strong customer authentication, transaction ledger, and push and email notifications. Python backend with React Native in the regulated EU financial sector.",
+      "relevant_budget_ids": ["BUD-2024-001", "BUD-2024-003"],
+      "ground_truth": "Referencia: aproximadamente 60 días de ingeniería, basada principalmente en BUD-2024-001 (480 horas). Autenticación y SCA: 15 días (AUTH-001, 120 h); PSD2 y open banking: 20 días (PSD2-002, 160 h); ledger de transacciones: 18 días (TXN-003, 140 h); notificaciones: 8 días (NOTIF-004, 60 h). BUD-2024-003 es apoyo para pagos. Confianza alta."
+    },
+    {
+      "id": "Q2",
+      "query": "Headless e-commerce storefront with a product catalog, shopping cart checkout and personalized product recommendations.",
+      "transcript": "Retail client needs a headless B2C e-commerce storefront: product catalog API, cart and checkout, personalized recommendations, and a React PWA. It is not a marketplace and has no multi-vendor payouts.",
+      "relevant_budget_ids": ["BUD-2024-005", "BUD-2024-006", "BUD-2024-007", "BUD-2024-017"],
+      "ground_truth": "Referencia: aproximadamente 59 días de ingeniería, principalmente BUD-2024-005 (460 horas). Catálogo: 19 días (CATALOG-001, 150 h); carrito y checkout: 18 días (CART-002, 140 h); recomendaciones: 14 días (RECO-003, 110 h); storefront PWA: 8 días (STORE-004, 60 h). Los pagos de marketplace quedan fuera de alcance. Confianza alta."
+    },
+    {
+      "id": "Q3",
+      "query": "Telemedicine platform for patient appointment scheduling and video consultations with HL7/FHIR integration and clinical records.",
+      "transcript": "Healthcare provider needs telemedicine with appointment scheduling, video consultations, HL7/FHIR integration, and clinical records with consent and audit logging. EU GDPR context and Python backend.",
+      "relevant_budget_ids": ["BUD-2024-009", "BUD-2024-010"],
+      "ground_truth": "Referencia: aproximadamente 70 días de ingeniería, principalmente BUD-2024-009 (560 horas). Integración FHIR: 24 días (FHIR-001, 190 h); scheduling: 19 días (APPT-002, 150 h); vídeo: 20 días (VIDEO-003, 160 h); consentimiento y auditoría: 8 días (CONSENT-004, 60 h). BUD-2024-010 es un análogo secundario. Confianza alta."
+    },
+    {
+      "id": "Q4",
+      "query": "Industrial IoT platform ingesting sensor telemetry for predictive maintenance and real-time equipment monitoring in a factory.",
+      "transcript": "Manufacturing client needs an industrial IoT platform to ingest equipment telemetry, run predictive maintenance models, and provide real-time monitoring dashboards integrated with SCADA. High data volume, on-premise plus cloud.",
+      "relevant_budget_ids": ["BUD-2024-013", "BUD-2024-015"],
+      "ground_truth": "Referencia: aproximadamente 62 días de ingeniería, principalmente BUD-2024-013 (500 horas). Ingesta de telemetría: 21 días (TELE-001, 170 h); mantenimiento predictivo: 25 días (PRED-002, 200 h); dashboard SCADA: 16 días (SCADA-003, 130 h). BUD-2024-015 es apoyo para pipelines y forecasting. Confianza alta/media."
+    },
+    {
+      "id": "Q5",
+      "query": "Real-time payments gateway with fraud detection, transaction reconciliation and a double-entry ledger.",
+      "transcript": "Fintech client needs a real-time payment gateway, fraud detection, settlement reconciliation, a double-entry ledger, and a merchant dashboard. Regulated EU financial sector with a Python backend.",
+      "relevant_budget_ids": ["BUD-2024-003", "BUD-2024-001"],
+      "ground_truth": "Referencia: aproximadamente 76 días de ingeniería, principalmente BUD-2024-003 (600 horas). Gateway: 28 días (GATE-001, 220 h); fraude: 25 días (FRAUD-002, 200 h); reconciliación y ledger: 15 días (RECON-003, 120 h); dashboard: 8 días (DASH-004, 60 h). BUD-2024-001 apoya el ledger. Confianza alta."
+    }
+  ]
+}

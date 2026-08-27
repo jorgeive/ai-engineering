@@ -12,7 +12,7 @@ Two independent guards run after the LLM returns an :class:`Estimate`:
 
 from __future__ import annotations
 
-from app.generation.rag.schemas import Estimate, RetrievedChunk
+from app.generation.rag.schemas import CitationReport, Estimate, RetrievedChunk, LineCitation
 
 
 def validate_citations(
@@ -34,17 +34,18 @@ def validate_citations(
 
     Returns
     -------
-    list[int]
-        Sorted, de-duplicated fabricated source ids (empty if all valid).
+    list[str]
+        Sorted, de-duplicated fabricated chunk ids (empty if all valid).
     """
-    valid_ids = {chunk.id for chunk in retrieved_chunks}
+    valid_ids = {str(chunk.id) for chunk in retrieved_chunks}
 
-    cited_ids: set[int] = {citation.source_id for citation in estimate.sources}
+    cited_ids: set[str] = {str(citation.source_id) for citation in estimate.sources}
     for module in estimate.modules:
         for task in module.tasks:
-            cited_ids.update(task.sources)
+            cited_ids.update(str(source.chunk_id) for source in task.sources)
 
-    return sorted(cited_ids - valid_ids)
+    fabricated = cited_ids - valid_ids
+    return sorted(int(value) if value.isdigit() else value for value in fabricated)
 
 
 def check_coherence(estimate: Estimate) -> bool:
@@ -62,4 +63,40 @@ def check_coherence(estimate: Estimate) -> bool:
         and estimate.duration_weeks is None
         and not estimate.modules
         and bool(estimate.insufficient_context_explanation)
+    )
+
+
+def verify_citations(estimate: Estimate, retrieved_ids: set[str]) -> CitationReport:
+    """Verify every line-level citation resolves to the retrieved context."""
+    lines: list[LineCitation] = []
+    verified = 0
+    dangling: set[str] = set()
+    global_cited = {str(citation.source_id) for citation in estimate.sources}
+    global_missing = global_cited - retrieved_ids
+    dangling.update(global_missing)
+    verified += len(global_cited & retrieved_ids)
+    for module in estimate.modules:
+        for task in module.tasks:
+            cited = [str(source.chunk_id) for source in task.sources]
+            missing = sorted(set(cited) - retrieved_ids)
+            verified += sum(1 for chunk_id in cited if chunk_id in retrieved_ids)
+            status = "dangling" if missing else ("grounded" if task.grounded else "insufficient")
+            lines.append(
+                LineCitation(
+                    module=module.name,
+                    component=task.name,
+                    status=status,
+                    cited_chunk_ids=cited,
+                    dangling_chunk_ids=missing,
+                )
+            )
+            dangling.update(missing)
+    return CitationReport(
+        total_lines=len(lines),
+        grounded_lines=sum(line.status == "grounded" for line in lines),
+        dangling_lines=sum(line.status == "dangling" for line in lines),
+        insufficient_lines=sum(line.status == "insufficient" for line in lines),
+        verified_citations=verified,
+        dangling_citations=sorted(dangling),
+        lines=lines,
     )

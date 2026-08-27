@@ -248,7 +248,9 @@ class LLMWrapper:
         # Reasoning models (gpt-5 family) accept ``reasoning_effort``; LiteLLM
         # forwards it and translates ``max_tokens`` to ``max_completion_tokens``.
         extra: dict[str, Any] = {}
-        if reasoning_effort is not None:
+        # ``reasoning_effort`` is supported by GPT-5 reasoning models only;
+        # sending it to GPT-4o causes an OpenAI UnsupportedParamsError.
+        if reasoning_effort is not None and _normalise_model_name(target_model).startswith("gpt-5"):
             extra["reasoning_effort"] = reasoning_effort
 
         t0 = time.perf_counter()
@@ -325,7 +327,7 @@ class LLMWrapper:
             response_model=response_model.__name__,
         )
         extra: dict[str, Any] = {}
-        if reasoning_effort is not None:
+        if reasoning_effort is not None and _normalise_model_name(target_model).startswith("gpt-5"):
             extra["reasoning_effort"] = reasoning_effort
 
         t0 = time.perf_counter()

@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # Closed universe of client sectors present in the sample dataset. Kept as a
 # Literal so a typo or an unexpected sector fails validation loudly instead of
@@ -262,6 +262,14 @@ class Assumption(BaseModel):
     rationale: str
 
 
+class SourceReference(BaseModel):
+    """Verifiable citation from one estimate line to a retrieved chunk."""
+
+    chunk_id: str = Field(description="Retrieved chunk id supporting this line.")
+    document_id: str = Field(description="Historical budget document containing the chunk.")
+    evidence: str = Field(description="Verbatim source span or figure supporting the line.")
+
+
 class TaskItem(BaseModel):
     """One concrete engineering task inside a functional module, in engineer-days.
 
@@ -279,7 +287,42 @@ class TaskItem(BaseModel):
         "mode (Session 10): the LLM proposes the module→task structure and the hours "
         "are derived afterwards by per-task vector search, not inferred here.",
     )
-    sources: list[int] = Field(default_factory=list, description="Chunk ids that back this task.")
+    grounded: bool = Field(
+        default=False,
+        description="Whether this line has sufficient retrieved source data.",
+    )
+    sources: list[SourceReference] = Field(
+        default_factory=list,
+        description="Line-level citations; non-empty when grounded is true.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_sources(cls, value):
+        """Accept the Session 10 integer citation shape when fields are omitted."""
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        if "grounded" not in data and (data.get("engineer_days") is not None or data.get("sources")):
+            data["grounded"] = bool(data.get("sources"))
+            if not data["grounded"] and data.get("engineer_days") is not None:
+                data["engineer_days"] = None
+        if data.get("sources") and all(isinstance(source, int) for source in data["sources"]):
+            data["sources"] = [
+                {"chunk_id": str(source), "document_id": "unknown", "evidence": ""}
+                for source in data["sources"]
+            ]
+        return data
+
+    @model_validator(mode="after")
+    def validate_grounding(self) -> "TaskItem":
+        if self.grounded and not self.sources:
+            raise ValueError("a grounded line must cite at least one source")
+        if not self.grounded and self.sources:
+            raise ValueError("an ungrounded line must not carry sources")
+        if not self.grounded and self.engineer_days is not None:
+            raise ValueError("an ungrounded line must leave engineer_days null")
+        return self
 
 
 class WorkModule(BaseModel):
@@ -310,6 +353,35 @@ class Estimate(BaseModel):
     confidence: Confidence
     reasoning: str = Field(description="How the estimate was derived from the sources.")
     insufficient_context_explanation: str | None = None
+
+
+LineCitationStatus = Literal["grounded", "dangling", "insufficient"]
+
+
+class LineCitation(BaseModel):
+    """Verification outcome for one estimate line."""
+
+    module: str
+    component: str
+    status: LineCitationStatus
+    cited_chunk_ids: list[str] = Field(default_factory=list)
+    dangling_chunk_ids: list[str] = Field(default_factory=list)
+
+
+class CitationReport(BaseModel):
+    """Aggregate verification of line citations against retrieved context."""
+
+    total_lines: int = Field(ge=0)
+    grounded_lines: int = Field(ge=0)
+    dangling_lines: int = Field(ge=0)
+    insufficient_lines: int = Field(ge=0)
+    verified_citations: int = Field(ge=0)
+    dangling_citations: list[str] = Field(default_factory=list)
+    lines: list[LineCitation] = Field(default_factory=list)
+
+    @property
+    def has_dangling(self) -> bool:
+        return bool(self.dangling_citations)
 
 
 # ---- HTTP request models for the Session 9 routers ------------------------
@@ -413,9 +485,13 @@ class GenerateResult(BaseModel):
     the wizard surfaces (instead of auto-retrying like the full pipeline)."""
 
     estimate: Estimate
-    fabricated_source_ids: list[int] = Field(
+    fabricated_source_ids: list[int | str] = Field(
         default_factory=list,
-        description="Cited source ids not present in kept_chunks (empty = clean).",
+        description="Cited chunk ids not present in kept_chunks (empty = clean).",
+    )
+    citation_report: CitationReport | None = Field(
+        default=None,
+        description="Per-line citation verification report; absent for structure-only generation.",
     )
     coherent: bool = Field(description="False when an insufficient estimate still carries numbers.")
 
